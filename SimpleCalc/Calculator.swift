@@ -8,6 +8,8 @@ final class Calculator {
     enum Token: Codable, Hashable {
         case number(String)
         case op(Op)
+        case openParen
+        case closeParen
     }
 
     struct HistoryEntry: Identifiable, Hashable, Codable {
@@ -29,7 +31,14 @@ final class Calculator {
     }
 
     var display: String {
-        if !current.isEmpty { return displayFormat(current) }
+        if !current.isEmpty {
+            if let last = tokens.last, case .op = last, Double(current) != nil {
+                var trial = tokens
+                trial.append(.number(current))
+                if let v = evaluateTokens(trial) { return format(v) }
+            }
+            return displayFormat(current)
+        }
         if let r = lastResult { return format(r) }
         if let last = tokens.last {
             if case .number(let s) = last { return displayFormat(s) }
@@ -43,11 +52,17 @@ final class Calculator {
             switch tok {
             case .number(let s): return displayFormat(s)
             case .op(let o): return o.rawValue
+            case .openParen: return "("
+            case .closeParen: return ")"
             }
         }.joined(separator: " ")
+            .replacingOccurrences(of: "( ", with: "(")
+            .replacingOccurrences(of: " )", with: ")")
         if !current.isEmpty {
             if let last = tokens.last, case .op = last {
                 out += " " + displayFormat(current)
+            } else if let last = tokens.last, case .openParen = last {
+                out += displayFormat(current)
             } else if tokens.isEmpty {
                 out = displayFormat(current)
             }
@@ -94,6 +109,7 @@ final class Calculator {
         let resStr = format(v)
         if hasOp { recordHistory(expression: expr, result: resStr) }
         lastResult = v
+        if hasOp { tokens = [] }
     }
 
     func backspace() {
@@ -126,6 +142,25 @@ final class Calculator {
         reset()
     }
 
+    func openParen() {
+        roundOverride = nil
+        if lastResult != nil { reset() }
+        if !current.isEmpty {
+            commitCurrent()
+            tokens.append(.op(.mul))
+        } else if let last = tokens.last {
+            if case .number = last { tokens.append(.op(.mul)) }
+            else if case .closeParen = last { tokens.append(.op(.mul)) }
+        }
+        tokens.append(.openParen)
+    }
+
+    func closeParen() {
+        roundOverride = nil
+        commitCurrent()
+        tokens.append(.closeParen)
+    }
+
     func negate() {
         if !current.isEmpty {
             current = current.hasPrefix("-") ? String(current.dropFirst()) : "-" + current
@@ -146,7 +181,6 @@ final class Calculator {
                case .number(let lhsStr) = tokens[tokens.count - 2],
                let lhs = Double(lhsStr) {
                 current = formatNumber(lhs * v / 100)
-                equals()
             } else {
                 current = formatNumber(v / 100)
             }
@@ -180,27 +214,79 @@ final class Calculator {
     }
 
     private func evaluate() -> Double? {
+        return evaluateTokens(tokens)
+    }
+
+    private func evaluateTokens(_ tokens: [Token]) -> Double? {
         guard !tokens.isEmpty else { return nil }
-        var acc: Double? = nil
-        var pending: Op? = nil
-        var expectingNumber = true
-        for tok in tokens {
-            switch tok {
-            case .number(let s):
-                guard expectingNumber, let v = Double(s) else { return nil }
-                if acc == nil { acc = v }
-                else if let op = pending, let a = acc {
-                    acc = compute(a, v, op)
-                    pending = nil
-                }
-                expectingNumber = false
-            case .op(let o):
-                guard !expectingNumber else { return nil }
-                pending = o
-                expectingNumber = true
+
+        var input = tokens
+        while let last = input.last {
+            switch last {
+            case .op, .openParen: input.removeLast()
+            default: return evalCompleted(input)
             }
         }
-        return acc
+        return nil
+    }
+
+    private func evalCompleted(_ tokens: [Token]) -> Double? {
+        guard !tokens.isEmpty else { return nil }
+        var output: [Token] = []
+        var opStack: [Token] = []
+        for tok in tokens {
+            switch tok {
+            case .number:
+                output.append(tok)
+            case .op(let o):
+                while let top = opStack.last {
+                    if case .op(let topOp) = top, precedence(topOp) >= precedence(o) {
+                        output.append(opStack.removeLast())
+                    } else { break }
+                }
+                opStack.append(tok)
+            case .openParen:
+                opStack.append(tok)
+            case .closeParen:
+                var matched = false
+                while let top = opStack.last {
+                    if case .openParen = top {
+                        opStack.removeLast()
+                        matched = true
+                        break
+                    }
+                    output.append(opStack.removeLast())
+                }
+                if !matched { return nil }
+            }
+        }
+        while let top = opStack.popLast() {
+            if case .openParen = top { continue }
+            output.append(top)
+        }
+        var stack: [Double] = []
+        for tok in output {
+            switch tok {
+            case .number(let s):
+                guard let v = Double(s) else { return nil }
+                stack.append(v)
+            case .op(let o):
+                guard stack.count >= 2 else { return nil }
+                let b = stack.removeLast()
+                let a = stack.removeLast()
+                stack.append(compute(a, b, o))
+            case .openParen, .closeParen:
+                return nil
+            }
+        }
+        return stack.last
+    }
+
+    private func precedence(_ op: Op) -> Int {
+        switch op {
+        case .add, .sub: return 1
+        case .mul, .div: return 2
+        }
     }
 
     private func compute(_ a: Double, _ b: Double, _ op: Op) -> Double {

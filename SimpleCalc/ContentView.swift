@@ -136,6 +136,12 @@ struct ContentView: View {
         case "n", "N":
             calc.negate()
             return .handled
+        case "(":
+            calc.openParen()
+            return .handled
+        case ")":
+            calc.closeParen()
+            return .handled
         default:
             return .ignored
         }

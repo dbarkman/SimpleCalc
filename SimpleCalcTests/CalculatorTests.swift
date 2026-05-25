@@ -60,10 +60,60 @@ struct CalculatorTests {
         #expect(c.display == "15")
     }
 
-    @Test func chainedMixedOps_leftToRight() {
+    @Test func precedenceMulBeforeAdd() {
         let c = Calculator()
         c.digit(2); c.setOp(.add); c.digit(3); c.setOp(.mul); c.digit(4); c.equals()
-        #expect(c.display == "20", "Left-to-right: (2+3)*4 = 20")
+        #expect(c.display == "14", "PEMDAS: 2 + 3 * 4 = 14")
+    }
+
+    @Test func precedenceMulFirst() {
+        let c = Calculator()
+        c.digit(5); c.setOp(.mul); c.digit(5); c.setOp(.add); c.digit(3); c.equals()
+        #expect(c.display == "28", "5 * 5 + 3 = 28")
+    }
+
+    @Test func precedenceAddThenMul() {
+        let c = Calculator()
+        c.digit(3); c.setOp(.add); c.digit(5); c.setOp(.mul); c.digit(5); c.equals()
+        #expect(c.display == "28", "3 + 5 * 5 = 28 (not 40)")
+    }
+
+    @Test func precedenceMultipleMulAndAdd() {
+        let c = Calculator()
+        c.digit(2); c.setOp(.mul); c.digit(3); c.setOp(.add); c.digit(4); c.setOp(.mul); c.digit(5); c.equals()
+        #expect(c.display == "26", "2*3 + 4*5 = 26")
+    }
+
+    @Test func precedenceDivBeforeSub() {
+        let c = Calculator()
+        c.digit(2); c.digit(0); c.setOp(.sub); c.digit(1); c.digit(0); c.setOp(.div); c.digit(2); c.equals()
+        #expect(c.display == "15", "20 - 10 / 2 = 15")
+    }
+
+    // MARK: Parentheses
+
+    @Test func parensOverridePrecedence() {
+        let c = Calculator()
+        c.openParen(); c.digit(2); c.setOp(.add); c.digit(3); c.closeParen(); c.setOp(.mul); c.digit(4); c.equals()
+        #expect(c.display == "20", "(2+3)*4 = 20")
+    }
+
+    @Test func nestedParens() {
+        let c = Calculator()
+        c.openParen(); c.openParen(); c.digit(1); c.setOp(.add); c.digit(2); c.closeParen(); c.setOp(.mul); c.openParen(); c.digit(3); c.setOp(.add); c.digit(4); c.closeParen(); c.closeParen(); c.equals()
+        #expect(c.display == "21", "((1+2)*(3+4)) = 21")
+    }
+
+    @Test func parensMidExpression() {
+        let c = Calculator()
+        c.digit(2); c.setOp(.add); c.openParen(); c.digit(3); c.setOp(.mul); c.digit(4); c.closeParen(); c.equals()
+        #expect(c.display == "14", "2 + (3*4) = 14")
+    }
+
+    @Test func parensImplicitMultiplyAfterNumber() {
+        let c = Calculator()
+        c.digit(5); c.openParen(); c.digit(2); c.setOp(.add); c.digit(3); c.closeParen(); c.equals()
+        #expect(c.display == "25", "5(2+3) implicit-mul = 25")
     }
 
     // MARK: Decimal
@@ -105,13 +155,17 @@ struct CalculatorTests {
     @Test func percentSubtractsAsFractionOfLhs() {
         let c = Calculator()
         c.digit(1); c.digit(0); c.digit(0); c.setOp(.sub); c.digit(2); c.digit(0); c.percent()
-        #expect(c.display == "80", "100 - 20% auto-evaluates to 80")
+        #expect(c.display == "80", "100 - 20% shows running 80 (live eval, no auto-equals)")
+        c.equals()
+        #expect(c.display == "80")
     }
 
     @Test func percentAddsAsFractionOfLhs() {
         let c = Calculator()
         c.digit(1); c.digit(0); c.digit(0); c.setOp(.add); c.digit(2); c.digit(0); c.percent()
-        #expect(c.display == "120", "100 + 20% auto-evaluates to 120")
+        #expect(c.display == "120", "100 + 20% shows running 120 (live eval, no auto-equals)")
+        c.equals()
+        #expect(c.display == "120")
     }
 
     @Test func percentMultipliesAsLiteralFraction() {
