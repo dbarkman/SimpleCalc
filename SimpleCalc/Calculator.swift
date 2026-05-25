@@ -140,7 +140,16 @@ final class Calculator {
 
     func percent() {
         if !current.isEmpty, let v = Double(current) {
-            current = formatNumber(v / 100)
+            if tokens.count >= 2,
+               case .op(let pending) = tokens.last,
+               (pending == .add || pending == .sub),
+               case .number(let lhsStr) = tokens[tokens.count - 2],
+               let lhs = Double(lhsStr) {
+                current = formatNumber(lhs * v / 100)
+                equals()
+            } else {
+                current = formatNumber(v / 100)
+            }
         } else if let last = tokens.last, case .number(let s) = last, let v = Double(s) {
             tokens.removeLast()
             tokens.append(.number(formatNumber(v / 100)))

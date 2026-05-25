@@ -102,6 +102,24 @@ struct CalculatorTests {
         #expect(c.display == "0.5")
     }
 
+    @Test func percentSubtractsAsFractionOfLhs() {
+        let c = Calculator()
+        c.digit(1); c.digit(0); c.digit(0); c.setOp(.sub); c.digit(2); c.digit(0); c.percent()
+        #expect(c.display == "80", "100 - 20% auto-evaluates to 80")
+    }
+
+    @Test func percentAddsAsFractionOfLhs() {
+        let c = Calculator()
+        c.digit(1); c.digit(0); c.digit(0); c.setOp(.add); c.digit(2); c.digit(0); c.percent()
+        #expect(c.display == "120", "100 + 20% auto-evaluates to 120")
+    }
+
+    @Test func percentMultipliesAsLiteralFraction() {
+        let c = Calculator()
+        c.digit(1); c.digit(0); c.digit(0); c.setOp(.mul); c.digit(2); c.digit(0); c.percent(); c.equals()
+        #expect(c.display == "20", "100 × 20% = 20")
+    }
+
     // MARK: Backspace (atom-by-atom)
 
     @Test func backspaceDigitsThenOpThenDigits() {

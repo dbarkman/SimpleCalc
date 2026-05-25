@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @State private var calc = Calculator()
@@ -74,6 +75,22 @@ struct ContentView: View {
     }
 
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        if press.modifiers.contains(.command) {
+            guard let ch = press.characters.first else { return .ignored }
+            switch ch {
+            case "c", "C":
+                copyDisplay()
+                return .handled
+            case "v", "V":
+                pasteIntoDisplay()
+                return .handled
+            case "\u{7F}", "\u{8}":
+                calc.clear()
+                return .handled
+            default:
+                return .ignored
+            }
+        }
         switch press.key {
         case .return:
             calc.equals()
@@ -119,12 +136,34 @@ struct ContentView: View {
         case "n", "N":
             calc.negate()
             return .handled
-        case "c", "C":
-            calc.clear()
-            return .handled
         default:
             return .ignored
         }
+    }
+
+    private func copyDisplay() {
+        let raw = calc.display
+            .replacingOccurrences(of: "≈ ", with: "")
+            .replacingOccurrences(of: ",", with: "")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(raw, forType: .string)
+    }
+
+    private func pasteIntoDisplay() {
+        guard let raw = NSPasteboard.general.string(forType: .string) else { return }
+        let cleaned = raw
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, Double(cleaned) != nil else { return }
+        calc.clear()
+        let negative = cleaned.hasPrefix("-")
+        let body = negative ? String(cleaned.dropFirst()) : cleaned
+        for ch in body {
+            if ch == "." { calc.decimal() }
+            else if let d = Int(String(ch)) { calc.digit(d) }
+        }
+        if negative { calc.negate() }
     }
 }
 
