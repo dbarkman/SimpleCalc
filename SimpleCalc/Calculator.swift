@@ -116,6 +116,7 @@ final class Calculator {
     }
 
     func setOp(_ op: Op) {
+        if let r = lastResult, !r.isFinite { return }  // stay on Error
         roundOverride = nil
         if lastResult != nil {
             tokens = [.number(formatNumber(lastResult!))]
@@ -184,6 +185,15 @@ final class Calculator {
     }
 
     func closeParen() {
+        let opens = tokens.filter { $0 == .openParen }.count
+        let closes = tokens.filter { $0 == .closeParen }.count
+        guard opens > closes else { return }
+        if current.isEmpty, let last = tokens.last {
+            switch last {
+            case .op, .openParen: return
+            default: break
+            }
+        }
         roundOverride = nil
         commitCurrent()
         tokens.append(.closeParen)
@@ -220,6 +230,31 @@ final class Calculator {
         }
     }
 
+    /// Sets the current operand from pasted text, keeping any pending expression.
+    /// Returns false (and changes nothing) when the text isn't a finite number.
+    @discardableResult
+    func paste(_ raw: String) -> Bool {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        s.removeAll { $0 == "," || $0 == " " || "$€£¥".contains($0) }
+        if s.hasPrefix("+") { s.removeFirst() }
+        guard !s.isEmpty, let v = Double(s), v.isFinite else { return false }
+        let isPlain = s.allSatisfy { $0.isASCII && ($0.isNumber || $0 == "." || $0 == "-") }
+            && s.filter(\.isNumber).count <= 15
+        var operand = isPlain ? s : Self.plainNumber(v)
+        if operand.hasPrefix("-.") { operand = "-0" + operand.dropFirst() }
+        else if operand.hasPrefix(".") { operand = "0" + operand }
+        if lastResult != nil { reset() }
+        roundOverride = nil
+        if let last = tokens.last, case .closeParen = last { tokens.append(.op(.mul)) }
+        current = operand
+        return true
+    }
+
+    private static func plainNumber(_ d: Double) -> String {
+        if d == d.rounded() && abs(d) < 1e15 { return String(format: "%.0f", d) }
+        return d.formatted(.number.precision(.significantDigits(1...15)).grouping(.never))
+    }
+
     func clearHistory() {
         history.removeAll()
         saveHistory()
@@ -245,6 +280,11 @@ final class Calculator {
             tokens = entry.tokens
         } else {
             tokens = Self.parseExpression(entry.expression)
+        }
+        // Make the last operand the active entry so the display shows the live result.
+        if tokens.count > 1, case .number(let s) = tokens.last {
+            tokens.removeLast()
+            current = s
         }
     }
 
@@ -410,8 +450,20 @@ final class Calculator {
         let parts = body.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         let intPart = parts.first ?? ""
         let fracPart = parts.count > 1 ? parts[1] : ""
-        guard let intVal = Int(intPart) ?? (intPart.isEmpty ? 0 : nil) else { return s }
-        let groupedInt = intVal.formatted(.number.grouping(.automatic))
+        let groupedInt: String
+        if let intVal = Int(intPart) ?? (intPart.isEmpty ? 0 : nil) {
+            groupedInt = intVal.formatted(.number.grouping(.automatic))
+        } else if intPart.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            // Too large for Int: group by hand.
+            var chars: [Character] = []
+            for (i, ch) in intPart.reversed().enumerated() {
+                if i > 0 && i % 3 == 0 { chars.append(",") }
+                chars.append(ch)
+            }
+            groupedInt = String(chars.reversed())
+        } else {
+            return s
+        }
         var out = groupedInt
         if !fracPart.isEmpty || trailingDot {
             out += "." + fracPart

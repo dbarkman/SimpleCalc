@@ -158,19 +158,7 @@ struct ContentView: View {
 
     private func pasteIntoDisplay() {
         guard let raw = NSPasteboard.general.string(forType: .string) else { return }
-        let cleaned = raw
-            .replacingOccurrences(of: ",", with: "")
-            .replacingOccurrences(of: " ", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty, Double(cleaned) != nil else { return }
-        calc.clear()
-        let negative = cleaned.hasPrefix("-")
-        let body = negative ? String(cleaned.dropFirst()) : cleaned
-        for ch in body {
-            if ch == "." { calc.decimal() }
-            else if let d = Int(String(ch)) { calc.digit(d) }
-        }
-        if negative { calc.negate() }
+        calc.paste(raw)
     }
 }
 

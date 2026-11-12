@@ -258,4 +258,107 @@ struct CalculatorTests {
         c.backspace()
         #expect(c.display == "2", "After backspace removes trailing '+', display reverts to last operand 2")
     }
+
+    // MARK: Paste
+
+    @Test func pasteKeepsPendingExpression() {
+        let c = Calculator()
+        c.digit(1); c.digit(2); c.setOp(.add)
+        #expect(c.paste("3"))
+        c.equals()
+        #expect(c.display == "15", "12 + paste(3) = 15")
+    }
+
+    @Test func pasteReplacesTypedOperand() {
+        let c = Calculator()
+        c.digit(1); c.digit(2); c.setOp(.add); c.digit(4); c.digit(5)
+        c.paste("3"); c.equals()
+        #expect(c.display == "15")
+    }
+
+    @Test func pasteAfterResultStartsFresh() {
+        let c = Calculator()
+        c.digit(5); c.setOp(.add); c.digit(3); c.equals()
+        c.paste("2"); c.setOp(.add); c.digit(1); c.equals()
+        #expect(c.display == "3")
+    }
+
+    @Test func pasteAfterCloseParenMultiplies() {
+        let c = Calculator()
+        c.openParen(); c.digit(2); c.setOp(.add); c.digit(3); c.closeParen()
+        c.paste("4"); c.equals()
+        #expect(c.display == "20")
+    }
+
+    @Test func pasteCleansFormatting() {
+        let c = Calculator()
+        c.paste(" $1,234.50 \n")
+        #expect(c.display == "1,234.50")
+        c.paste("+5"); #expect(c.display == "5")
+        c.paste("-.5"); #expect(c.display == "-0.5")
+        c.paste("€1,250"); #expect(c.display == "1,250")
+    }
+
+    @Test func pasteScientificAndLongNumbers() {
+        let c = Calculator()
+        c.paste("1e5"); #expect(c.display == "100,000")
+        c.paste("1e20"); #expect(c.display == "100,000,000,000,000,000,000")
+        c.paste("12345678901234567"); #expect(c.display == "12,345,678,901,234,600", "rounded to 15 significant digits, never truncated")
+    }
+
+    @Test func pasteRejectsNonNumbers() {
+        let c = Calculator()
+        c.digit(9)
+        for junk in ["abc", "nan", "inf", "(2+3)", "", "  "] {
+            #expect(!c.paste(junk), "\(junk) must be rejected")
+            #expect(c.display == "9", "\(junk) must not change the display")
+        }
+    }
+
+    // MARK: Parentheses edge cases
+
+    @Test func unmatchedCloseParenIgnored() {
+        let c = Calculator()
+        c.digit(2); c.setOp(.add); c.digit(3); c.closeParen(); c.equals()
+        #expect(c.display == "5")
+    }
+
+    @Test func closeParenAfterOperatorIgnored() {
+        let c = Calculator()
+        c.openParen(); c.digit(2); c.setOp(.add); c.closeParen(); c.digit(3); c.closeParen(); c.equals()
+        #expect(c.display == "5")
+    }
+
+    // MARK: Error state
+
+    @Test func operatorAfterErrorIgnored() {
+        let c = Calculator()
+        c.digit(5); c.setOp(.div); c.digit(0); c.equals()
+        c.setOp(.add)
+        #expect(c.display == "Error")
+        c.digit(7)
+        #expect(c.display == "7", "a digit after Error starts fresh")
+    }
+
+    // MARK: History reload
+
+    @Test func loadEntryShowsResult() {
+        let c = Calculator()
+        c.loadEntry(Calculator.HistoryEntry(expression: "1,234 × 2", result: "2,468"))
+        #expect(c.display == "2,468")
+        #expect(c.expressionText == "1,234 × 2")
+        c.equals()
+        #expect(c.display == "2,468")
+    }
+
+    // MARK: Display grouping
+
+    @Test func hugeResultIsGrouped() {
+        let c = Calculator()
+        for _ in 0..<10 { c.digit(9) }
+        c.setOp(.mul)
+        for _ in 0..<10 { c.digit(9) }
+        c.equals()
+        #expect(c.display == "99,999,999,980,000,000,000")
+    }
 }
