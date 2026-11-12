@@ -17,6 +17,34 @@ final class Calculator {
         let expression: String
         let result: String
         var date: Date = Date()
+        var favorite: Bool = false
+        var note: String = ""
+        var tokens: [Token] = []
+
+        enum CodingKeys: String, CodingKey {
+            case id, expression, result, date, favorite, note, tokens
+        }
+
+        init(id: UUID = UUID(), expression: String, result: String, date: Date = Date(), favorite: Bool = false, note: String = "", tokens: [Token] = []) {
+            self.id = id
+            self.expression = expression
+            self.result = result
+            self.date = date
+            self.favorite = favorite
+            self.note = note
+            self.tokens = tokens
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+            expression = try c.decode(String.self, forKey: .expression)
+            result = try c.decode(String.self, forKey: .result)
+            date = try c.decodeIfPresent(Date.self, forKey: .date) ?? Date()
+            favorite = try c.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
+            note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+            tokens = try c.decodeIfPresent([Token].self, forKey: .tokens) ?? []
+        }
     }
 
     var tokens: [Token] = []
@@ -107,7 +135,7 @@ final class Calculator {
         let hasOp = tokens.contains { if case .op = $0 { return true } else { return false } }
         let expr = expressionText
         let resStr = format(v)
-        if hasOp { recordHistory(expression: expr, result: resStr) }
+        if hasOp { recordHistory(expression: expr, result: resStr, tokens: tokens) }
         lastResult = v
         if hasOp { tokens = [] }
     }
@@ -195,6 +223,69 @@ final class Calculator {
     func clearHistory() {
         history.removeAll()
         saveHistory()
+    }
+
+    func toggleFavorite(id: UUID) {
+        guard let idx = history.firstIndex(where: { $0.id == id }) else { return }
+        history[idx].favorite.toggle()
+        saveHistory()
+    }
+
+    func setNote(id: UUID, _ note: String) {
+        guard let idx = history.firstIndex(where: { $0.id == id }) else { return }
+        history[idx].note = note
+        saveHistory()
+    }
+
+    func loadEntry(_ entry: HistoryEntry) {
+        roundOverride = nil
+        current = ""
+        lastResult = nil
+        if !entry.tokens.isEmpty {
+            tokens = entry.tokens
+        } else {
+            tokens = Self.parseExpression(entry.expression)
+        }
+    }
+
+    static func parseExpression(_ s: String) -> [Token] {
+        var tokens: [Token] = []
+        var buffer = ""
+        func flushNumber() {
+            if !buffer.isEmpty {
+                tokens.append(.number(buffer))
+                buffer = ""
+            }
+        }
+        for ch in s {
+            switch ch {
+            case " ":
+                flushNumber()
+            case ",":
+                continue
+            case "0"..."9", ".":
+                buffer.append(ch)
+            case "-":
+                if buffer.isEmpty { buffer.append(ch) }
+                else { flushNumber() }
+            case "+":
+                flushNumber(); tokens.append(.op(.add))
+            case "−":
+                flushNumber(); tokens.append(.op(.sub))
+            case "×":
+                flushNumber(); tokens.append(.op(.mul))
+            case "÷":
+                flushNumber(); tokens.append(.op(.div))
+            case "(":
+                flushNumber(); tokens.append(.openParen)
+            case ")":
+                flushNumber(); tokens.append(.closeParen)
+            default:
+                continue
+            }
+        }
+        flushNumber()
+        return tokens
     }
 
     private func reset() {
@@ -350,8 +441,8 @@ final class Calculator {
         return wasRounded(d) ? "≈ \(text)" : text
     }
 
-    private func recordHistory(expression: String, result: String) {
-        let entry = HistoryEntry(expression: expression, result: result)
+    private func recordHistory(expression: String, result: String, tokens: [Token] = []) {
+        let entry = HistoryEntry(expression: expression, result: result, tokens: tokens)
         history.insert(entry, at: 0)
         saveHistory()
     }
